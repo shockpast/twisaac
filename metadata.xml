@@ -1,0 +1,9 @@
+<!-- metadata.xml is mostly useless, since this mod requires "luadebug" flag -->
+
+<metadata>
+	<name>twisaac</name>
+	<directory>twisaac</directory>
+	<description/>
+	<version>1.0</version>
+	<visibility/>
+</metadata>
