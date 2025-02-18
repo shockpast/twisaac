@@ -1,6 +1,9 @@
 # TwIsaac
 
+![TwIsaac Preview](assets/gZBAXr.png)
+
 Twitch Chat, but inside of Isaac, isn't it awesome?
+
 
 > [!WARNING]
 > TwIsaac requires `--luadebug` flag in launch options, since it uses `luasocket` to connect to Twitch Chat.
