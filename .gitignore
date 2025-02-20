@@ -1,2 +1,4 @@
 # it has my C:\Users in it :(
 .luarc.json
+# actual file, so people won't receive updates for it (and lose their data)
+config.lua

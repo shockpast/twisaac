@@ -1,6 +1,6 @@
 local twitch = include("modules/twitch")
 local helpers = include("modules/helpers")
-local data = include("data")
+local config = include("config")
 
 ---@type ModReference
 local mod = RegisterMod("TwIsaac", 1)
@@ -92,4 +92,4 @@ mod:AddCallback(ModCallbacks.MC_POST_RENDER, callbacks.post_render)
 mod:AddCallback(ModCallbacks.MC_EXECUTE_CMD, callbacks.execute_cmd)
 
 --
-client = twitch:connect(data.channel, data.username, data.token)
+client = twitch:connect(config.channel, config.username, config.token)

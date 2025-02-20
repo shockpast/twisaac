@@ -81,6 +81,8 @@ end
 ---@param username string
 ---@param token string
 function twitch:connect(channel, username, token)
+  if channel == nil or username == nil or token == nil then return nil end
+
   self.socket = socket.tcp()
   self.socket:settimeout(5)
 
