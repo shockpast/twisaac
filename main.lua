@@ -1,4 +1,8 @@
+package.loaded["modules/chatter"] = nil
+package.loaded["config"] = nil
+
 local twitch = include("modules/twitch")
+local chatter = require("modules/chatter")
 local helpers = include("modules/helpers")
 local config = include("config")
 
@@ -8,7 +12,9 @@ local mod = RegisterMod("TwIsaac", 1)
 local font = Font()
 font:Load("font/pftempestasevencondensed.fnt")
 
--- corountine that will receive incoming messages
+local game = Game()
+
+-- coroutine that will receive incoming messages
 local recv_co = nil
 -- twitch's modules client
 local client = nil
@@ -17,51 +23,66 @@ local callbacks = {}
 
 function callbacks:post_update()
   if client == nil then return end
+  if recv_co ~= nil and coroutine.status(recv_co) ~= "dead" then coroutine.resume(recv_co) end
 
   recv_co = coroutine.create(function() twitch:receive() end)
 
   if recv_co == nil then return end
   if coroutine.status(recv_co) == "dead" then return end
 
+  --
   coroutine.resume(recv_co)
+
+  --
+  chatter:update()
 end
 
 function callbacks:post_render()
+  local room = game:GetRoom()
+  if room:GetFrameCount() < 1 then return end
   if client == nil then return end
 
-  local screen_height = Isaac.GetScreenHeight()
+  for username, data in pairs(chatter.entities) do
+    local entity_pointer = data.entity
+    if entity_pointer == nil then goto ocontinue end
+    if entity_pointer.Ref == nil then goto ocontinue end
 
-  font:DrawStringScaledUTF8(string.format("#%s", client.channel), 50, screen_height - 15, 0.5, 0.5, KColor(1, 1, 1, 1))
+    ---@type Entity
+    local entity = entity_pointer.Ref
+    local position = Isaac.WorldToScreen(entity.Position)
 
-  for index, message in ipairs(client.messages) do
-    local username = string.format("%s", message.tags["display-name"])
-    local text = string.format(": %s", message.text)
-    local timestamp = string.format("@ %s", message.timestamp)
+    --
+    local username_x = position.X - font:GetStringWidthUTF8(username) / (2 / 0.5)
 
-    local username_width = font:GetStringWidthUTF8(username)
-    local total_width = font:GetStringWidthUTF8(username .. text)
+    do -- draw username
+      local color = data.messages[#data.messages].color
+      local r, g, b = color.R, color.G, color.B
 
-    local r, g, b = table.unpack(message.color or { 1, 1, 1 })
-
-    local base_x = 53
-    local base_y = screen_height - 17 - (index * 10)
-
-    for name, _ in pairs(message.badges) do
-      ---@type Sprite
-      local badge = client.badges[name]
-      if badge == nil then goto icontinue end
-
-      base_x = base_x + 16 - 5 -- move username
-
-      badge.Scale = Vector(0.5, 0.5)
-      badge:Render(Vector(base_x - (16 - 5), base_y), Vector.Zero, Vector.Zero) -- render badge at old username position
-
-      ::icontinue::
+      font:DrawStringScaledUTF8(username, username_x, position.Y, 0.5, 0.5, KColor(r, g, b, 1))
     end
 
-    font:DrawStringScaledUTF8(username, base_x, base_y, 0.5, 0.5, KColor(r, g, b, 1))
-    font:DrawStringScaledUTF8(text, base_x + username_width / 2, base_y, 0.5, 0.5, KColor.White)
-    font:DrawStringScaledUTF8(timestamp, base_x + (total_width / 2) + 2, base_y, 0.5, 0.5, KColor(1, 1, 1, 0.4))
+    do -- draw message
+      if data.last_message then
+        font:DrawStringScaledUTF8(data.last_message, position.X - font:GetStringWidthUTF8(data.last_message) / (2 / 0.5), position.Y - 7, 0.5, 0.5, KColor(1, 1, 1, data.alpha))
+      end
+    end
+
+    do -- draw badges
+      for name, _ in pairs(data.messages[#data.messages].badges) do
+        ---@type Sprite
+        local badge = client.badges[name]
+        if badge == nil then goto icontinue end
+
+        username_x = username_x - 10
+
+        badge.Scale = Vector(0.5, 0.5)
+        badge:Render(Vector(username_x, position.Y), Vector.Zero, Vector.Zero)
+
+        ::icontinue::
+      end
+    end
+
+    ::ocontinue::
   end
 end
 
@@ -72,7 +93,7 @@ function callbacks:execute_cmd(cmd, params)
 
   local arguments = helpers.extract_arguments(params)
 
-  if cmd == "twisaac_say" then
+  if cmd == "twisaac_say" then -- message
     client:say(params)
   end
 
@@ -86,10 +107,36 @@ function callbacks:execute_cmd(cmd, params)
   end
 end
 
+function callbacks:post_game_started(is_continued)
+  if is_continued then return end
+  chatter:reset()
+end
+
+function callbacks:post_game_end()
+  chatter:reset()
+end
+
+-- otherwise it will save position from previous room, and spawn at the same place
+-- instead we'll set their position to player's position after room entered (same as familiars logic)
+function callbacks:post_new_room()
+  for _, data in pairs(chatter.entities) do
+    ---@type Entity|nil
+    local entity = data.entity.Ref
+    if entity == nil then goto icontinue end
+
+    entity.Position = Isaac.GetPlayer().Position
+
+    ::icontinue::
+  end
+end
+
 --
 mod:AddCallback(ModCallbacks.MC_POST_UPDATE, callbacks.post_update)
 mod:AddCallback(ModCallbacks.MC_POST_RENDER, callbacks.post_render)
 mod:AddCallback(ModCallbacks.MC_EXECUTE_CMD, callbacks.execute_cmd)
+mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, callbacks.post_game_started)
+mod:AddCallback(ModCallbacks.MC_POST_GAME_END, callbacks.post_game_end)
+mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, callbacks.post_new_room)
 
 --
 client = twitch:connect(config.channel, config.username, config.token)

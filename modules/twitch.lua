@@ -5,9 +5,11 @@
   If you will use this module inside of other mod, please credit me :)
 ]]
 
---
+-- system
 local socket = require("socket")
 
+-- user
+local chatter = require("modules/chatter")
 local helpers = include("modules/helpers")
 
 ---@class Twitch
@@ -54,14 +56,13 @@ local function parse_message(message)
 
   -- parse timestamp
   do
-    local timestamp = tonumber(message_entity.tags["tmi-sent-ts"]) or 0
-    message_entity.timestamp = os.date("%H:%M:%S", math.floor(timestamp / 1000))
+    message_entity.timestamp = os.date("%H:%M:%S", math.floor((tonumber(message_entity.tags["tmi-sent-ts"]) or 0) / 1000))
   end
 
   -- parse color
   do
     local color = message_entity.tags.color
-    message_entity.color = color and helpers.hex_to_rgb(color) or nil
+    message_entity.color = color and helpers.hex_to_rgb(color) or Color(1, 1, 1, 1)
   end
 
   -- parse default data
@@ -92,17 +93,13 @@ function twitch:connect(channel, username, token)
     return nil
   end
 
+  self.socket:send(string.format("PASS oauth:%s\r\n", token))
+  self.socket:send(string.format("NICK %s\r\n", username))
+
   self.channel = channel
   self.username = username
 
-  self.socket:send(string.format("PASS oauth:%s\r\n", token))
-  self.socket:send(string.format("NICK %s\r\n", username))
-  self.socket:send(string.format("JOIN #%s\r\n", channel))
-  self.socket:send("CAP REQ :twitch.tv/membership twitch.tv/tags\r\n") -- chat metadata
-
   self.messages[channel] = {}
-
-  print(string.format("[twisaac] connected to #%s", channel))
 
   return twitch
 end
@@ -113,11 +110,19 @@ function twitch:receive()
     local message, err = self.socket:receive("*l")
 
     if message ~= nil then
-      if string.sub(message, 0, #"PING") == "PING" then
-        print(message)
-        print("[twisaac] ping-pong!")
+      do -- internal irc messages, ping-pong and joining channel (also notification about it)
+        if string.sub(message, 0, #"PING") == "PING" then
+          self.socket:send("PONG :tmi.twitch.tv\r\n")
+        end
 
-        self.socket:send("PONG :tmi.twitch.tv\r\n")
+        if string.find(message, ".tv 376") then
+          self.socket:send(string.format("JOIN #%s\r\n", self.channel))
+          self.socket:send("CAP REQ :twitch.tv/membership twitch.tv/tags\r\n") -- chat metadata
+        end
+
+        if string.find(message, ".tv 366") then
+          print(string.format("[twisaac] joined #%s", self.channel))
+        end
       end
 
       if string.sub(message, 0, #"@badge-info") ~= "@badge-info" then return end
@@ -125,11 +130,24 @@ function twitch:receive()
 
       sfx:Play(SoundEffect.SOUND_BOSS2_BUBBLES)
 
-      self.messages[#self.messages + 1] = parse_message(message)
+      local message_entity = parse_message(message)
+      chatter:create(message_entity.username, message_entity)
+      chatter:add_message(message_entity.username, message_entity)
     end
 
     if err and err ~= "timeout" then
       print("[twisaac] error: " .. tostring(err))
+
+      for username, data in pairs(chatter.entities) do
+        ---@type Entity?
+        local entity = data.entity.Ref
+        if entity == nil then goto icontinue end
+
+        entity:Remove()
+        chatter:remove(username)
+
+        ::icontinue::
+      end
 
       self.socket:close()
       self.socket = nil
